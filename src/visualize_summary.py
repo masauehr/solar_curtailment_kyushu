@@ -312,6 +312,7 @@ def main():
     fig12_logistic_concept()
     fig13_roc_curve()
     fig14_point_vs_area_comparison()
+    fig15_low_sun_curtailment_factors()
     print(f"図を保存: {FIG_DIR}")
 
 
@@ -491,6 +492,45 @@ def fig14_point_vs_area_comparison():
     ax.set_title("⑭ 単一点より九州全体の面で見た方が精度が上がる\n（本リポジトリ最高のAUC。AMeDAS平均とAMGSDSメッシュ平均はほぼ同精度）")
     fig.tight_layout()
     fig.savefig(FIG_DIR / "14_point_vs_area.png", dpi=140)
+    plt.close(fig)
+
+
+def fig15_low_sun_curtailment_factors():
+    """追加検証9: 全天日射量10分位別の制御率と、低日射量帯での風力・需要の効果を示す。"""
+    import analyze_low_sun_curtailment as al
+
+    df = al.build_dataset()
+    summary = df.groupby("decile").agg(n=("is_curtailed", "size"), n_curtailed=("is_curtailed", "sum"))
+    summary["curtail_pct"] = summary["n_curtailed"] / summary["n"] * 100
+
+    low = df[df["decile"] <= 1]
+    low_c, low_nc = low[low["is_curtailed"] == 1], low[low["is_curtailed"] == 0]
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    ax = axes[0]
+    ax.bar(range(10), summary["curtail_pct"], color="#94a3b8")
+    ax.bar([0, 1], summary["curtail_pct"].iloc[:2], color="#dc2626")
+    ax.set_xlabel("全天日射量の10分位（0=最も少ない）")
+    ax.set_ylabel("制御率 (%)")
+    ax.set_title("①全天日射量10分位ごとの制御率\n（赤=下位20%、まだ少数だが制御日が存在する）")
+
+    ax = axes[1]
+    x = np.arange(2)
+    width = 0.35
+    wind_vals = [low_c["wind_only_mwh"].mean(), low_nc["wind_only_mwh"].mean()]
+    demand_vals_norm = [low_c["demand_mwh"].mean() / 1000, low_nc["demand_mwh"].mean() / 1000]
+    ax2 = ax.twinx()
+    b1 = ax.bar(x - width / 2, wind_vals, width, color="#16a34a", label="風力発電量(MWh)")
+    b2 = ax2.bar(x + width / 2, demand_vals_norm, width, color="#2563eb", label="需要(GWh)")
+    ax.set_xticks(x); ax.set_xticklabels(["制御日\n(n=8)", "非制御日\n(n=266)"])
+    ax.set_ylabel("風力発電量 (MWh)", color="#16a34a")
+    ax2.set_ylabel("需要 (GWh)", color="#2563eb")
+    ax.set_title("②下位20%帯での風力・需要の比較\n（制御日は風力が多く、需要が少ない傾向）")
+    ax.legend(handles=[b1, b2], loc="lower center", fontsize=9)
+
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "15_low_sun_curtailment_factors.png", dpi=140)
     plt.close(fig)
 
 
