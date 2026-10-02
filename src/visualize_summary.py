@@ -236,6 +236,38 @@ def fig07_backtest_comparison():
     plt.close(fig)
 
 
+def fig08a_generation_scatter_windsolar_original():
+    """当初版: 太陽光単独に訂正する前の「風力＋太陽光」合計データでの散布図（修正履歴#6）。
+    fig08（太陽光単独、訂正後）と対比させるために、同じ描き方で再現する。
+    """
+    wind_solar = pd.read_csv(PROCESSED_DIR / "kyushu_wind_solar_daily.csv", parse_dates=["date"])
+    wind_solar["wind_solar_mwh"] = wind_solar["wind_solar_kwh"] / 1000
+    merged = pd.read_csv(PROCESSED_DIR / "kyushu_generation_merged.csv", parse_dates=["date"])[
+        ["date", "solar_mj", "is_curtailed"]]
+    gen = wind_solar.merge(merged, on="date", how="inner")
+    gen = gen[gen["date"] >= "2023-01-01"]
+    non_c = gen[gen["is_curtailed"] == 0]
+    curt = gen[gen["is_curtailed"] == 1]
+
+    slope, intercept = np.polyfit(non_c["solar_mj"], non_c["wind_solar_mwh"], 1)
+    r2 = np.corrcoef(non_c["solar_mj"], non_c["wind_solar_mwh"])[0, 1] ** 2
+    x_line = np.array([gen["solar_mj"].min(), gen["solar_mj"].max()])
+
+    fig, ax = plt.subplots(figsize=(9, 6.5))
+    ax.scatter(non_c["solar_mj"], non_c["wind_solar_mwh"], s=10, alpha=0.4, color="#94a3b8", label="非制御日")
+    ax.scatter(curt["solar_mj"], curt["wind_solar_mwh"], s=10, alpha=0.4, color="#dc2626", label="制御日")
+    ax.plot(x_line, slope * x_line + intercept, color="#1d4ed8", lw=2, ls="--",
+            label=f"非制御日の回帰直線 (R²={r2:.2f})")
+    ax.set_xlabel("実測 全天日射量 (MJ/m²)")
+    ax.set_ylabel("実際の発電量（風力＋太陽光の合計, MWh/日）")
+    ax.set_title("⑧a【当初版・訂正前】発電量との関係: 風力を含む合計データを使用\n"
+                 "（風力は日射と無関係なためノイズが混ざる。2023年以降に限定）", fontsize=11)
+    ax.legend(fontsize=9, loc="upper left")
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "08a_generation_scatter_windsolar_original.png", dpi=140)
+    plt.close(fig)
+
+
 def fig08_generation_scatter():
     gen = pd.read_csv(PROCESSED_DIR / "kyushu_generation_merged.csv", parse_dates=["date"])
     # 太陽光の導入量が年々増えているため、頭打ち効果を公平に見るには導入量がほぼ一定の
@@ -305,6 +337,7 @@ def main():
     fig05_auc_comparison()
     fig06_amgsds_bias()
     fig07_backtest_comparison()
+    fig08a_generation_scatter_windsolar_original()
     fig08_generation_scatter()
     fig09_generation_corr_comparison()
     fig10_seasonal_weekday_effect()
