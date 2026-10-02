@@ -1,0 +1,19 @@
+# solar_curtailment_kyushu 用の依存パッケージ
+# 想定環境: conda env "met_env"（Python 3.11）
+#   conda activate met_env
+
+pandas>=2.0
+numpy>=1.24
+requests>=2.28
+beautifulsoup4>=4.12   # 気象庁 etrn ページのパース（html.parser使用、lxml不要）
+matplotlib>=3.7
+openpyxl>=3.1          # 九州電力送配電Excel・FITポータルExcel(新形式)の読み込み
+xlrd>=2.0              # FITポータルExcel(旧形式.xls)の読み込み
+pdfplumber>=0.11       # 沖縄電力PDFのテーブル抽出
+jpholiday>=0.1         # 日本の祝日判定
+scikit-learn>=1.3      # ロジスティック回帰・AUC評価
+python-dotenv>=1.0     # .envからANTHROPIC_API_KEYを読み込む
+anthropic>=0.40        # Claude API（forecast_narrative.pyで使用）
+
+# jupyter（notebook.ipynbの実行・編集用。既にJupyterLab等がある環境では不要）
+jupyter>=1.0
