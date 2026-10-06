@@ -346,6 +346,7 @@ def main():
     fig13_roc_curve()
     fig14_point_vs_area_comparison()
     fig15_low_sun_curtailment_factors()
+    fig16_advance_vs_final_comparison()
     print(f"図を保存: {FIG_DIR}")
 
 
@@ -564,6 +565,46 @@ def fig15_low_sun_curtailment_factors():
 
     fig.tight_layout()
     fig.savefig(FIG_DIR / "15_low_sun_curtailment_factors.png", dpi=140)
+    plt.close(fig)
+
+
+def fig16_advance_vs_final_comparison():
+    """追加検証10: 「前日指示」のみの結果と「最終決定(速報優先)」の結果を、
+    曜日別割合・月別制御日数の両方で比較する（九州）。
+    前日指示は見通し(予報ベース)、最終決定は実際に制御した日(実況ベース)という違いがあるため、
+    これまでの分析（曜日・季節のパターン）が両者でどう異なるかを可視化する。
+    """
+    kyu_final = pd.read_csv(PROCESSED_DIR / "kyushu_curtail_days.csv", parse_dates=["date"])
+    kyu_advance = pd.read_csv(PROCESSED_DIR / "kyushu_curtail_days_advance.csv", parse_dates=["date"])
+
+    days_ja = ["月", "火", "水", "木", "金", "土", "日"]
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
+
+    ax = axes[0]
+    width = 0.35
+    x = np.arange(7)
+    for i, (name, df, color) in enumerate([("前日指示のみ", kyu_advance, "#f59e0b"), ("最終決定", kyu_final, "#2563eb")]):
+        counts = df["date"].dt.dayofweek.value_counts().reindex(range(7), fill_value=0)
+        ratio = counts / counts.sum() * 100
+        ax.bar(x + (i - 0.5) * width, ratio.values, width, label=name, color=color, alpha=0.85)
+    ax.axhline(100 / 7, color="gray", ls=":", lw=1.5, label="カレンダー上の均等割合(14.3%)")
+    ax.set_xticks(x); ax.set_xticklabels(days_ja)
+    ax.set_ylabel("制御日に占める割合 (%)")
+    ax.set_title("①曜日別割合（九州）\n前日指示 vs 最終決定")
+    ax.legend(fontsize=9)
+
+    ax = axes[1]
+    for name, df, color in [("前日指示のみ", kyu_advance, "#f59e0b"), ("最終決定", kyu_final, "#2563eb")]:
+        monthly = df["date"].dt.month.value_counts().reindex(range(1, 13), fill_value=0)
+        ax.plot(monthly.index, monthly.values, marker="o", color=color, label=name)
+    ax.set_xticks(range(1, 13))
+    ax.set_xlabel("月"); ax.set_ylabel("制御日数（延べ・全期間合計）")
+    ax.set_title("②月別制御日数（九州）\n前日指示 vs 最終決定")
+    ax.legend(fontsize=9)
+
+    fig.suptitle("⑯ 前日判断と当日判断でパターンはどう変わるか（九州）", y=1.00)
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "16_advance_vs_final.png", dpi=140)
     plt.close(fig)
 
 

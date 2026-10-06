@@ -23,6 +23,7 @@ import pandas as pd
 BASE_DIR = Path(__file__).resolve().parent.parent
 RAW_DIR = BASE_DIR / "data" / "raw"
 OUT_PATH = BASE_DIR / "data" / "processed" / "okinawa_curtail_days.csv"
+OUT_PATH_ADVANCE = BASE_DIR / "data" / "processed" / "okinawa_curtail_days_advance.csv"
 
 DATE_STR_RE = re.compile(r"(\d{1,2})月(\d{1,2})日")
 
@@ -41,9 +42,10 @@ def parse_leading_date(text, fy_start_year: int):
         return None
 
 
-def extract_pdf(path: Path, fy_start_year: int) -> dict:
-    """{日付: 制御の有無(bool)} の辞書を返す（速報があれば速報を優先）。"""
+def extract_pdf(path: Path, fy_start_year: int) -> tuple:
+    """(前日指示のみの{日付: 制御有無}, 最終決定の{日付: 制御有無}) を返す（速報があれば速報を優先）。"""
     status: dict = {}
+    status_advance: dict = {}
     with pdfplumber.open(path) as pdf:
         for page in pdf.pages:
             for table in page.extract_tables():
@@ -67,27 +69,46 @@ def extract_pdf(path: Path, fy_start_year: int) -> dict:
                     period_date = parse_leading_date(period_val, fy_start_year)
                     if period_date is not None:
                         status[period_date] = True
+                        if is_advance:
+                            status_advance[period_date] = True
                     elif period_val and "出力制御なし" in period_val:
                         target_date = issue_date + dt.timedelta(days=1 if is_advance else 0)
                         status[target_date] = False
-    return status
+                        if is_advance:
+                            status_advance[target_date] = False
+    return status_advance, status
 
 
 def main():
-    rows = []
+    rows, rows_advance = [], []
     for path in sorted(RAW_DIR.glob("okinawa_previous_control_*.pdf")):
         fy = int(path.stem.rsplit("_", 1)[-1])
-        status = extract_pdf(path, fy)
+        status_advance, status = extract_pdf(path, fy)
         curtailed = sorted(d for d, v in status.items() if v)
+        curtailed_advance = sorted(d for d, v in status_advance.items() if v)
         cancelled = sum(1 for v in status.values() if not v)
         for d in curtailed:
             rows.append({"fiscal_year": fy, "date": d})
-        print(f"{fy}年度: 制御日 {len(curtailed)}日（速報等で後から取り消されたもの{cancelled}件を除外）")
+        for d in curtailed_advance:
+            rows_advance.append({"fiscal_year": fy, "date": d})
+        print(f"{fy}年度: 最終決定の制御日 {len(curtailed)}日（前日指示のみでは{len(curtailed_advance)}日、"
+              f"速報等で後から取り消されたもの{cancelled}件を除外）")
 
     df = pd.DataFrame(rows).sort_values("date")
     df.to_csv(OUT_PATH, index=False)
-    print(f"\n合計 制御日数: {len(df)}日（{df['date'].min()} 〜 {df['date'].max()}）")
+    print(f"\n合計 制御日数（最終決定）: {len(df)}日（{df['date'].min()} 〜 {df['date'].max()}）")
     print(f"保存先: {OUT_PATH}")
+
+    df_advance = pd.DataFrame(rows_advance).sort_values("date")
+    df_advance.to_csv(OUT_PATH_ADVANCE, index=False)
+    print(f"\n合計 制御日数（前日指示のみ）: {len(df_advance)}日")
+    print(f"保存先: {OUT_PATH_ADVANCE}")
+
+    final_dates = set(df["date"])
+    advance_dates = set(df_advance["date"])
+    only_advance = advance_dates - final_dates
+    only_final = final_dates - advance_dates
+    print(f"\n前日指示→最終決定で変わった日数: 取り消し{len(only_advance)}日 / 追加{len(only_final)}日")
 
 
 if __name__ == "__main__":

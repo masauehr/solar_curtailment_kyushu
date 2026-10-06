@@ -29,6 +29,7 @@ import pandas as pd
 BASE_DIR = Path(__file__).resolve().parent.parent
 RAW_PATH = BASE_DIR / "data" / "raw" / "kyushu_curtail_history.xlsx"
 OUT_PATH = BASE_DIR / "data" / "processed" / "kyushu_curtail_days.csv"
+OUT_PATH_ADVANCE = BASE_DIR / "data" / "processed" / "kyushu_curtail_days_advance.csv"
 
 DATE_STR_RE = re.compile(r"^(\d{1,2})/(\d{1,2})")
 
@@ -62,10 +63,12 @@ def parse_date_cell(val, fy_start_year: int):
     return None
 
 
-def extract_sheet(ws, fy_start_year: int) -> dict:
-    """1つの年度シートから、{日付: 制御の有無(bool)} の辞書を返す。
-    列を左から順に処理し、同じ対象日を後から書き込まれた値で上書きすることで、
-    「前日指示 → 速報」の順で最新の決定が残るようにする。
+def extract_sheet(ws, fy_start_year: int) -> tuple:
+    """1つの年度シートから、(前日指示のみの{日付: 制御有無}, 最終決定の{日付: 制御有無}) を返す。
+    列を左から順に処理し、「最終決定」は同じ対象日を後から書き込まれた値で上書きすることで、
+    「前日指示 → 速報」の順で最新の決定が残るようにする（従来の挙動と同じ）。
+    「前日指示のみ」は速報・当日見直し列を無視し、前日指示列だけを見る
+    （追加検証10: 前日判断と当日判断でどれだけ結果が変わるかを比較するため）。
     """
     seq_row = find_seq_row(ws)
     issue_row = seq_row + 1
@@ -73,10 +76,11 @@ def extract_sheet(ws, fy_start_year: int) -> dict:
     period_row = seq_row + 3
     seq_cols = [c for c in range(1, ws.max_column + 1) if isinstance(ws.cell(row=seq_row, column=c).value, int)]
     if not seq_cols:
-        return {}
+        return {}, {}
     min_col, max_col = min(seq_cols), max(seq_cols) + 4  # 最後のseqの速報列まで走査範囲に含める
 
     status: dict = {}
+    status_advance: dict = {}
     for c in range(min_col, max_col + 1):
         label = ws.cell(row=label_row, column=c).value
         if not isinstance(label, str):
@@ -92,32 +96,52 @@ def extract_sheet(ws, fy_start_year: int) -> dict:
 
         if period_date is not None:
             status[period_date] = True
+            if is_advance:
+                status_advance[period_date] = True
         elif isinstance(period_val, str) and "出力制御なし" in period_val:
             if issue_date is None:
                 continue
             target_date = issue_date + dt.timedelta(days=1 if is_advance else 0)
             status[target_date] = False
+            if is_advance:
+                status_advance[target_date] = False
         # それ以外（空欄等）は対象外
 
-    return status
+    return status_advance, status
 
 
 def main():
     wb = openpyxl.load_workbook(RAW_PATH, data_only=True)
-    rows = []
+    rows, rows_advance = [], []
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
-        status = extract_sheet(ws, fiscal_start_year(sheet_name))
+        status_advance, status = extract_sheet(ws, fiscal_start_year(sheet_name))
         curtailed = sorted(d for d, v in status.items() if v)
+        curtailed_advance = sorted(d for d, v in status_advance.items() if v)
         cancelled = sum(1 for v in status.values() if not v)
         for d in curtailed:
             rows.append({"fiscal_year_sheet": sheet_name, "date": d})
-        print(f"{sheet_name}: 制御日 {len(curtailed)}日（速報等で後から取り消されたもの{cancelled}件を除外）")
+        for d in curtailed_advance:
+            rows_advance.append({"fiscal_year_sheet": sheet_name, "date": d})
+        print(f"{sheet_name}: 最終決定の制御日 {len(curtailed)}日（前日指示のみでは{len(curtailed_advance)}日、"
+              f"速報等で後から取り消されたもの{cancelled}件を除外）")
 
     df = pd.DataFrame(rows).sort_values("date")
     df.to_csv(OUT_PATH, index=False)
-    print(f"\n合計 制御日数: {len(df)}日（{df['date'].min()} 〜 {df['date'].max()}）")
+    print(f"\n合計 制御日数（最終決定）: {len(df)}日（{df['date'].min()} 〜 {df['date'].max()}）")
     print(f"保存先: {OUT_PATH}")
+
+    df_advance = pd.DataFrame(rows_advance).sort_values("date")
+    df_advance.to_csv(OUT_PATH_ADVANCE, index=False)
+    print(f"\n合計 制御日数（前日指示のみ）: {len(df_advance)}日")
+    print(f"保存先: {OUT_PATH_ADVANCE}")
+
+    # 前日指示と最終決定がどれだけ異なるか（revision rate）
+    final_dates = set(df["date"])
+    advance_dates = set(df_advance["date"])
+    only_advance = advance_dates - final_dates  # 前日は制御予定だったが最終的に取り消された日
+    only_final = final_dates - advance_dates    # 前日は制御なしだったが当日追加された日
+    print(f"\n前日指示→最終決定で変わった日数: 取り消し{len(only_advance)}日 / 追加{len(only_final)}日")
 
 
 if __name__ == "__main__":
