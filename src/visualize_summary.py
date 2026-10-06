@@ -347,6 +347,7 @@ def main():
     fig14_point_vs_area_comparison()
     fig15_low_sun_curtailment_factors()
     fig16_advance_vs_final_comparison()
+    fig17_auc_journey()
     print(f"図を保存: {FIG_DIR}")
 
 
@@ -605,6 +606,58 @@ def fig16_advance_vs_final_comparison():
     fig.suptitle("⑯ 前日判断と当日判断でパターンはどう変わるか（九州）", y=1.00)
     fig.tight_layout()
     fig.savefig(FIG_DIR / "16_advance_vs_final.png", dpi=140)
+    plt.close(fig)
+
+
+def fig17_auc_journey():
+    """全体を通したAUCの改善の流れを1枚にまとめる（0.57→0.92台）。
+    個別の図(fig05=月導入まで、fig14=面平均化)に分かれていて全体像が分かりにくいとの
+    ユーザー指摘を受けて追加。曜日のみ→日照→+トレンド→+季節(月)→+面平均、の5段階。
+    """
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import roc_auc_score
+
+    df = build_dataset()
+    df["month"] = df["date"].dt.month
+    month_dummies = pd.get_dummies(df["month"], prefix="month", drop_first=True)
+    df = pd.concat([df, month_dummies], axis=1)
+    month_cols = list(month_dummies.columns)
+    df = df.dropna(subset=["sunshine_h_kyushu_mean"]).reset_index(drop=True)
+
+    n_train = int(len(df) * 0.7)
+    train, test = df.iloc[:n_train], df.iloc[n_train:]
+
+    steps = [
+        (["is_weekend_or_holiday"], "①曜日のみ"),
+        (["sunshine_h"], "②日照時間のみ\n(福岡単一点)"),
+        (["sunshine_h", "is_weekend_or_holiday", "years_since_start"], "③日照+曜日\n+トレンド"),
+        (month_cols + ["sunshine_h", "is_weekend_or_holiday", "years_since_start"], "④+季節(月)\n★最大の効果"),
+        (month_cols + ["sunshine_h_kyushu_mean", "is_weekend_or_holiday", "years_since_start"],
+         "⑤福岡→九州\n面平均に変更"),
+    ]
+    aucs = []
+    for feats, _ in steps:
+        model = LogisticRegression(max_iter=1000)
+        model.fit(train[feats], train["is_curtailed"])
+        proba = model.predict_proba(test[feats])[:, 1]
+        aucs.append(roc_auc_score(test["is_curtailed"], proba))
+
+    labels = [s[1] for s in steps]
+    fig, ax = plt.subplots(figsize=(11, 5.5))
+    x = np.arange(len(labels))
+    colors = ["#94a3b8", "#94a3b8", "#2563eb", "#dc2626", "#16a34a"]
+    ax.plot(x, aucs, color="#334155", lw=2, ls="-", zorder=1)
+    ax.bar(x, aucs, color=colors, width=0.6, zorder=2)
+    for xi, v in zip(x, aucs):
+        ax.text(xi, v + 0.015, f"{v:.3f}", ha="center", fontsize=11, weight="bold")
+    ax.axhline(0.5, color="gray", ls=":", lw=1.2, label="ランダム(AUC=0.5)")
+    ax.set_xticks(x); ax.set_xticklabels(labels, fontsize=9)
+    ax.set_ylabel("ROC-AUC")
+    ax.set_ylim(0.4, 1.0)
+    ax.set_title(f"⑰ AUCの改善の流れ: {aucs[0]:.2f}（曜日だけ）→ {aucs[-1]:.2f}（最終構成）")
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "17_auc_journey.png", dpi=140)
     plt.close(fig)
 
 
