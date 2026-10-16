@@ -1,5 +1,7 @@
 # solar_curtailment_kyushu: 太陽光の出力制御（カーテイルメント）は天気で説明できるか — 九州 vs 沖縄
 
+> 📘 スライド資料（pptx）の作り方・成果物は [solar-curtailment-kyushu.md](solar-curtailment-kyushu.md) を参照。
+
 > 📦 **[weather_hackathon_ideas](https://github.com/masauehr/weather_hackathon_ideas)（気象×生成AIハッカソンの事前検証リポジトリ）の
 > ID-01スパイクが検証GOとなったため、2026-10-02に独立プロジェクトとして切り出した**。
 > 元アイデア: [ID-01](https://github.com/masauehr/weather_hackathon_ideas/blob/main/docs/idea_catalog.md)
